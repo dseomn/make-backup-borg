@@ -45,6 +45,8 @@ get_exclude_from_file() {
   fi
 }
 
+test -n "$BORG" || config_fatal "BORG command is not set"
+
 test -n "$BORG_REPO" || config_fatal "BORG_REPO is not set"
 export BORG_REPO  # Used by borg itself.
 
@@ -75,7 +77,7 @@ for archive in $ARCHIVES; do
       exclude_from_local="$(
           get_exclude_from_file "${BASE_DIR}/files.local.exclude")" ||
         exit 1
-      try borg create \
+      try $BORG create \
         --exclude-from "$exclude_from" \
         --exclude-from "$exclude_from_local" \
         "$archive_name" $PATHS
@@ -83,7 +85,7 @@ for archive in $ARCHIVES; do
 
     *)
       archive_command="$(get_archive_command "$archive")" || exit 1
-      try "$archive_command" | try borg create "$archive_name" - || exit 1
+      try "$archive_command" | try $BORG create "$archive_name" - || exit 1
       ;;
   esac
 done
