@@ -1,0 +1,18 @@
+# Special filesystems that are not useful to backup.
+/dev/
+/proc/
+/sys/
+
+# Temporary directories.
+/run/
+/tmp/
+/var/tmp/
+
+# Temporarily mounted data.
+/media/
+/mnt/
+
+# Cache directories.
+sh:/home/*/.cache/
+/root/.cache/
+/var/cache/
