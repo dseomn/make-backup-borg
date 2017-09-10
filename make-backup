@@ -1,0 +1,89 @@
+#!/bin/sh
+
+log() { printf %s\\n "$*"; }
+error() { log "ERROR: $*" >&2; }
+fatal() { error "$*"; exit 1; }
+try() { "$@" || fatal "Command failed: $*"; }
+
+BASE_DIR="$(try dirname "$0")" || exit 1
+
+
+# Parse configuration.
+CONFIG_FILE="${BASE_DIR}/make-backup.conf"
+LOCAL_CONFIG_FILE="${BASE_DIR}/make-backup.local.conf"
+
+. "$CONFIG_FILE" || fatal "Unable to read config file: ${CONFIG_FILE}"
+. "$LOCAL_CONFIG_FILE" ||
+  fatal "Unable to read local config file: ${LOCAL_CONFIG_FILE}"
+
+config_fatal() {
+  fatal "$* [CONFIG_FILE=${CONFIG_FILE} LOCAL_CONFIG_FILE=${LOCAL_CONFIG_FILE}]"
+}
+
+get_archive_command() {
+  test -n "$1" || fatal "get_archive_command: No archive name given."
+  for command_path in \
+      "$BASE_DIR/commands.local/$1" \
+      "$BASE_DIR/commands/$1" \
+      ; do
+    if test -e "$command_path"; then
+      printf %s "$command_path"
+      return
+    fi
+  done
+  fatal "Command '$1' not found in" \
+    "$BASE_DIR/commands.local/ or $BASE_DIR/commands/"
+}
+
+get_exclude_from_file() {
+  test -n "$1" || fatal "get_exclude_from_file: No file given."
+  if test -e "$1"; then
+    printf %s "$1"
+  else
+    # These are optional, so use /dev/null as the default of excluding nothing.
+    printf %s /dev/null
+  fi
+}
+
+test -n "$BORG_REPO" || config_fatal "BORG_REPO is not set"
+export BORG_REPO  # Used by borg itself.
+
+HAVE_WORK_TO_DO=
+for archive in $ARCHIVES; do
+  HAVE_WORK_TO_DO=yes
+  case "$archive" in
+    files)
+      test -n "$PATHS" || config_fatal "No configured PATHS to backup"
+      ;;
+    *)
+      # Make sure the command exists.
+      get_archive_command "$archive" > /dev/null
+      ;;
+  esac
+done
+test "$HAVE_WORK_TO_DO" = yes || config_fatal "No configured ARCHIVES to make"
+
+
+# Make the backups.
+for archive in $ARCHIVES; do
+  archive_name="::${ARCHIVE_NAME_PRE}${archive}${ARCHIVE_NAME_POST}"
+
+  case "$archive" in
+    files)
+      exclude_from="$(get_exclude_from_file "${BASE_DIR}/files.exclude")" ||
+        exit 1
+      exclude_from_local="$(
+          get_exclude_from_file "${BASE_DIR}/files.local.exclude")" ||
+        exit 1
+      try borg create \
+        --exclude-from "$exclude_from" \
+        --exclude-from "$exclude_from_local" \
+        "$archive_name" $PATHS
+      ;;
+
+    *)
+      archive_command="$(get_archive_command "$archive")" || exit 1
+      try "$archive_command" | try borg create "$archive_name" - || exit 1
+      ;;
+  esac
+done
