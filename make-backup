@@ -50,42 +50,39 @@ test -n "$BORG" || config_fatal "BORG command is not set"
 test -n "$BORG_REPO" || config_fatal "BORG_REPO is not set"
 export BORG_REPO  # Used by borg itself.
 
-HAVE_WORK_TO_DO=
-for archive in $ARCHIVES; do
-  HAVE_WORK_TO_DO=yes
-  case "$archive" in
-    files)
-      test -n "$PATHS" || config_fatal "No configured PATHS to backup"
-      ;;
-    *)
-      # Make sure the command exists.
-      get_archive_command "$archive" > /dev/null
-      ;;
-  esac
+test -n "$ARCHIVE_NAME" || config_fatal "ARCHIVE_NAME is not set"
+
+test -n "$PATHS" || config_fatal "No configured PATHS to backup"
+
+for command_name in $COMMANDS; do
+  # Make sure the command exists.
+  get_archive_command "$command_name" > /dev/null
 done
-test "$HAVE_WORK_TO_DO" = yes || config_fatal "No configured ARCHIVES to make"
 
 
-# Make the backups.
-for archive in $ARCHIVES; do
-  archive_name="::${ARCHIVE_NAME_PRE}${archive}${ARCHIVE_NAME_POST}"
+# Capture COMMANDS output, or exit if another make-backup is running.
+mkdir -m 700 "${BASE_DIR}/command-output/" || {
+  error "Unable to create directory ${BASE_DIR}/command-output/."
+  error
+  error "If another ${0} is already running, wait for it to finish. Otherwise,"
+  error "consider deleting the directory."
+  exit 1
+}
+trap 'try rm -r "${BASE_DIR}/command-output/"' EXIT
 
-  case "$archive" in
-    files)
-      exclude_from="$(get_exclude_from_file "${BASE_DIR}/files.exclude")" ||
-        exit 1
-      exclude_from_local="$(
-          get_exclude_from_file "${BASE_DIR}/files.local.exclude")" ||
-        exit 1
-      try $BORG create \
-        --exclude-from "$exclude_from" \
-        --exclude-from "$exclude_from_local" \
-        "$archive_name" $PATHS
-      ;;
-
-    *)
-      archive_command="$(get_archive_command "$archive")" || exit 1
-      try "$archive_command" | try $BORG create "$archive_name" - || exit 1
-      ;;
-  esac
+for command_name in $COMMANDS; do
+  command="$(get_archive_command "$command_name")" || exit 1
+  try "$command" > "${BASE_DIR}/command-output/${command_name}" ||
+    fatal "Unable to write to ${BASE_DIR}/command-output/${command_name}"
 done
+
+
+# Make the archive.
+exclude_from="$(get_exclude_from_file "${BASE_DIR}/files.exclude")" || exit 1
+exclude_from_local="$(
+    get_exclude_from_file "${BASE_DIR}/files.local.exclude")" ||
+  exit 1
+try $BORG create \
+  --exclude-from "$exclude_from" \
+  --exclude-from "$exclude_from_local" \
+  "::${ARCHIVE_NAME}" $PATHS

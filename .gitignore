@@ -1,2 +1,3 @@
 /files.local.exclude
 /make-backup.local.conf
+/command-output/
