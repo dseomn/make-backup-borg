@@ -1,9 +1,11 @@
 #!/bin/sh
 
 log() { printf %s\\n "$*"; }
+verbose() { test "$VERBOSE" -ge 1 && log "$*"; }
 error() { log "ERROR: $*" >&2; }
 fatal() { error "$*"; exit 1; }
 try() { "$@" || fatal "Command failed: $*"; }
+try_v() { verbose "Running command: $*"; try "$@"; }
 
 BASE_DIR="$(try dirname "$0")" || exit 1
 
@@ -72,6 +74,7 @@ trap 'try rm -r "${BASE_DIR}/command-output/"' EXIT
 
 for command_name in $COMMANDS; do
   command="$(get_archive_command "$command_name")" || exit 1
+  verbose "Saving output of ${command} to ${BASE_DIR}/command-output/"
   try "$command" > "${BASE_DIR}/command-output/${command_name}" ||
     fatal "Unable to write to ${BASE_DIR}/command-output/${command_name}"
 done
@@ -82,7 +85,8 @@ exclude_from="$(get_exclude_from_file "${BASE_DIR}/files.exclude")" || exit 1
 exclude_from_local="$(
     get_exclude_from_file "${BASE_DIR}/files.local.exclude")" ||
   exit 1
-try $BORG create \
+try_v $BORG create \
+  $(test "$VERBOSE" -ge 1 && printf '%s' --progress) \
   --exclude-from "$exclude_from" \
   --exclude-from "$exclude_from_local" \
   "::${ARCHIVE_NAME}" $PATHS
